@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="ie=edge">
+  <title>Chatter chat</title>
+  <script src="//cdnjs.cloudflare.com/ajax/libs/maquette/2.4.1/maquette.min.js"></script>
+  <script src="jwt-decode.js"></script>
+  <style>
+    #wrapper {
+      width: 80%;
+      margin: 0 10%;
+      box-sizing: border-box;
+      display: flex;
+      padding: 10% 0 0 0;
+    }
+
+    #login {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    #app {
+      flex: 4;
+    }
+
+    fieldset {
+      padding: 2rem;
+    }
+
+    input[name="text"] {
+      width: 80%;
+    }
+
+    #messages {
+      min-height: 600px;
+      background-color: aliceblue;
+      display: flex;
+    }
+
+    #messages ul {
+      width: 100%;
+    }
+
+    li{
+      width: 80%;
+      padding: 0.2rem;
+      margin: 2px 0;
+      list-style: none;
+    }
+
+    li.in {
+      float: left;
+      background-color: darkgoldenrod;
+    }
+
+    li.out {
+      float: right;
+      background-color: darkgrey;
+    }
+
+
+  </style>
+  <script>
+    const AUTH_URL = 'http://192.168.0.145:9000/customer/login';
+    // global app state
+    const APP = {};
+    APP.messages = [];
+    // setup vdom
+    var h = maquette.h;
+    var projector = maquette.createProjector();
+    function renderMessages() {
+      return h('ul', APP.messages.map((message, index) => {
+        return h(`li.${message.direction}`, { key: message.key }, [message.message])
+      }));
+    }
+
+    function pageReady() {
+
+
+      const messageDom = document.querySelector('#messages');
+      const tokenForm = document.querySelector('#tokenform');
+      const chatForm = document.querySelector('#chatform');
+      const recipientForm = document.querySelector('#recipientform');
+      // Initializes the projector
+      projector.append(messageDom, renderMessages);
+
+
+      tokenForm.addEventListener('submit', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        const token = e.target.querySelector('#token').value;
+        const { type, sub } = jwt_decode(token);
+        APP.identity = `${type}:${sub}`;
+        initiateWebSocketConnection(token);
+      });
+
+
+      // chatForm.addEventListener('keydown', e => {
+      // });
+
+      recipientForm.addEventListener('submit', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        APP.recipient = e.target.querySelector('#recipient').value;
+      });
+      // handle messages
+
+      chatForm.addEventListener('submit', e => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const text = e.target.querySelector('input[name="text"]').value;
+        console.log(text);
+        // return early if this was empty message
+        if (text.trim() === '') return false;
+
+        if (!APP.recipient) {
+          console.error('recipient is not set');
+          return false;
+        }
+
+        const message = {
+          'event': 'message',
+          'data': {
+            to: APP.recipient,
+            from: APP.identity,
+            data: text.trim()
+          }
+        };
+
+        e.target.querySelector('input[name="text"]').value = '';
+        if ('socket' in APP) {
+          APP['socket'].send(JSON.stringify(message));
+          APP.messages.push({ message: message.data.data, 'key': Math.round(Date.now() / 1000), 'direction': 'out' });
+          projector.scheduleRender();
+        } else {
+          alert("Mr. Smartpants, socket is not connected yet!");
+        }
+      }, false);
+
+
+      // // handle files
+      // const imageInputElement = chatForm.querySelector('input[name="image"]');
+      // imageInputElement.addEventListener("change", handleFiles, false);
+      // function handleFiles() {
+      //   const fileList = this.files; /* now you can work with the file list */
+      //   console.log(fileList);
+      // }
+
+
+      function initiateWebSocketConnection(token) {
+        const socket = new WebSocket(`ws://192.168.0.155:8888/?token=${token}`);
+        APP.socket = socket;
+
+        socket.onclose = function (e) {
+          console.log(e);
+        };
+
+        socket.onerror = function (e) {
+          console.log(e);
+        }
+
+        socket.onmessage = function (e) {
+          console.log(e);
+          const { event, data } = JSON.parse(e.data);
+          console.log(event, data);
+          APP.messages.push({
+            key: Math.round(e.timeStamp),
+            message: data,
+            direction: 'in'
+          });
+          projector.scheduleRender();
+        };
+
+        socket.onopen = function (e) {
+        };
+      }
+    }
+    document.addEventListener('DOMContentLoaded', pageReady);
+  </script>
+</head>
+
+<body>
+  <div id="wrapper">
+    <div id="login">
+
+
+      <form id="tokenform" action="#" method="POST">
+        <fieldset>
+          <legend>Token form</legend>
+          <input type="text" id="token" placeholder="token" />
+        </fieldset>
+      </form>
+
+
+
+      <form id="recipientform" action="#" method="POST">
+        <fieldset>
+          <legend>Recipient ID</legend>
+          <input type="text" id="recipient" />
+        </fieldset>
+      </form>
+
+
+
+
+
+    </div>
+
+    <div id="app">
+      <form id="chatform" method="POST">
+        <fieldset>
+          <legend>Chatter</legend>
+          <input type="text" name="text" placeholder="text" />
+          <!--<input type="file" name="image" id="chatImage" />-->
+        </fieldset>
+      </form>
+      <div id="messages">
+      </div>
+    </div>
+</body>
+
+</html>
